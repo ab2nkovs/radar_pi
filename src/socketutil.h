@@ -70,13 +70,13 @@ class NetworkAddress {
   uint16_t port;
 };
 
-extern wxString FormatNetworkAddress(NetworkAddress &addr);
-extern wxString FormatNetworkAddressPort(NetworkAddress &addr);
+extern wxString FormatNetworkAddress(const NetworkAddress &addr);
+extern wxString FormatNetworkAddressPort(const NetworkAddress &addr);
 
 extern bool socketReady(SOCKET sockfd, int timeout);
 
 extern int radar_inet_aton(const char *cp, struct in_addr *addr);
-extern SOCKET startUDPMulticastReceiveSocket(NetworkAddress &addr, NetworkAddress &mcast_address, wxString &error_message);
+extern SOCKET startUDPMulticastReceiveSocket(const NetworkAddress &addr, const NetworkAddress &mcast_address, wxString &error_message);
 extern SOCKET GetLocalhostServerTCPSocket();
 extern SOCKET GetLocalhostSendTCPSocket(SOCKET receive_socket);
 

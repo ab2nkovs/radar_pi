@@ -34,7 +34,7 @@
 
 PLUGIN_BEGIN_NAMESPACE
 
-wxString FormatNetworkAddress(NetworkAddress &addr) {
+wxString FormatNetworkAddress(const NetworkAddress &addr) {
   uint8_t *a = (uint8_t *)&addr.addr;  // sin_addr is in network layout
   wxString address;
   address.Printf(wxT("%u.%u.%u.%u"), a[0], a[1], a[2], a[3]);
@@ -42,7 +42,7 @@ wxString FormatNetworkAddress(NetworkAddress &addr) {
   return address;
 }
 
-wxString FormatNetworkAddressPort(NetworkAddress &addr) {
+wxString FormatNetworkAddressPort(const NetworkAddress &addr) {
   uint8_t *a = (uint8_t *)&addr.addr;  // sin_addr is in network layout
   wxString address;
   address.Printf(wxT("%u.%u.%u.%u port %u"), a[0], a[1], a[2], a[3], htons(addr.port));
@@ -171,7 +171,7 @@ bool socketReady(SOCKET sockfd, int timeout) {
   return r > 0;
 }
 
-SOCKET startUDPMulticastReceiveSocket(NetworkAddress &interface_address, NetworkAddress &mcast_address, wxString &error_message) {
+SOCKET startUDPMulticastReceiveSocket(const NetworkAddress &interface_address, const NetworkAddress &mcast_address, wxString &error_message) {
   SOCKET rx_socket;
   struct sockaddr_in listenAddress;
   int one = 1;
