@@ -43,7 +43,7 @@ RaymarineReceive::RaymarineReceive(radar_pi *pi, RadarInfo *ri, NetworkAddress r
   : RadarReceive(pi, ri)
   , m_report_addr(reportAddr)
   , m_next_spoke(-1)
-  , m_radar_status(0)
+  , m_radar_status(-1)
   , m_shutdown_time_requested(0)
   , m_is_shutdown(false)
   , m_first_receive(true)
@@ -154,8 +154,11 @@ SOCKET RaymarineReceive::GetNewDataSocket(const NetworkAddress & dataGroup)
 	if (socket != INVALID_SOCKET)
 	{
     wxString addr = FormatNetworkAddress(m_interface_addr);
-    wxString data_addr = FormatNetworkAddressPort(m_report_addr);
+    wxString data_addr = FormatNetworkAddressPort(dataGroup);
 	  LOG_RECEIVE(wxT("radar_pi: %s listening for data on interface %s multicast group %s"), m_ri->m_name.c_str(), addr.c_str(), data_addr.c_str());
+    wxString s;
+    s << _("Listening to ")  << data_addr << _(" on interface") << wxT(" ") << addr;
+    SetInfoStatus(s);
 	} 
 	else 
 	{
@@ -246,7 +249,7 @@ void *RaymarineReceive::Entry(void)
 				if (r > 0) 
 				{
 					ProcessFrame(data, r);
-					no_data_timeout = -15;
+          no_data_timeout = SECONDS_SELECT(-5);
 				} 
 				else 
 				{
@@ -259,6 +262,7 @@ void *RaymarineReceive::Entry(void)
       if (reportSocket != INVALID_SOCKET && FD_ISSET(reportSocket, &fdin)) {
         rx_len = sizeof(rx_addr);
         r = recvfrom(reportSocket, (char *)data, sizeof(data), 0, (struct sockaddr *)&rx_addr, &rx_len);
+
         if (r > 0) {
           NetworkAddress radar_address;
           radar_address.addr = rx_addr.ipv4.sin_addr;
@@ -284,8 +288,13 @@ void *RaymarineReceive::Entry(void)
               {
                 dataSocket = GetNewDataSocket(m_dataGroup);
               }
+            	no_data_timeout = SECONDS_SELECT(-5);
             }
-            no_data_timeout = SECONDS_SELECT(-15);
+						else
+						{
+							// Make sure data socket is working
+            	no_data_timeout++;
+						}
           }
         } else {
           wxLogError(wxT("radar_pi: %s illegal report"), m_ri->m_name.c_str());
@@ -302,6 +311,7 @@ void *RaymarineReceive::Entry(void)
         {
           closesocket(dataSocket);
           dataSocket = INVALID_SOCKET;
+					m_haveRadar = false;
         }
         if (reportSocket != INVALID_SOCKET) {
           closesocket(reportSocket);
@@ -989,13 +999,15 @@ void RaymarineReceive::ProcessScanData(const UINT8 *data, int len)
 				
 			headerIdx++;
 			
+			int angle_raw = (spoke + RAYMARINE_SPOKES / 2) % RAYMARINE_SPOKES;
+
       short int heading_raw = 0;
       int bearing_raw;
 
       heading_raw = SCALE_DEGREES_TO_RAW(m_pi->GetHeadingTrue());  // include variation
-      bearing_raw = spoke + heading_raw;
+      bearing_raw = angle_raw + heading_raw;
 
-      SpokeBearing a = MOD_SPOKES(spoke);
+      SpokeBearing a = MOD_SPOKES(angle_raw);
       SpokeBearing b = MOD_SPOKES(bearing_raw);
 
 			m_ri->ProcessRadarSpoke(a, b, dataPtr, RAYMARINE_MAX_SPOKE_LEN, m_range_meters, time_rec);
