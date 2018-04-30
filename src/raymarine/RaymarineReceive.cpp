@@ -272,7 +272,7 @@ void *RaymarineReceive::Entry(void)
           if (ProcessReport(data, r)) {
             if (!radar_addr) {
               wxCriticalSectionLocker lock(m_lock);
-              m_ri->DetectedRadar(m_interface_addr, radar_address);  // enables transmit data
+              m_ri->DetectedRadar(m_interface_addr, m_radarAddr);  // enables transmit data
 
               // the dataSocket is opened in the next loop
 

@@ -38,6 +38,8 @@
 
 PLUGIN_BEGIN_NAMESPACE
 
+extern int raymarine_ranges[11];
+
 class RaymarineControl : public RadarControl {
  public:
   RaymarineControl(NetworkAddress sendMultiCastAddress);
