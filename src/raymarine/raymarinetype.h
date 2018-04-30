@@ -10,6 +10,8 @@ PLUGIN_END_NAMESPACE
 
 #endif
 
+#if 0
+
 #define RANGE_METRIC_RT_RAYMARINE \
   { 125, 250, 500, 750, 1500, 3000, 6000, 12000, 24000, 48000, 72000 }
 // Garmin mixed range is the same as nautical miles, it does not support really short ranges
@@ -21,6 +23,12 @@ PLUGIN_END_NAMESPACE
   {                                                                                                                       \
     1852 / 4, 1852 / 2, 1852, 1852 * 3 / 2, 1852 * 3, 1852 * 6, 1852 * 12, 1852 * 24, 1852 * 48, 1852 * 96, 1852 * 144                                         \
   }
+#else
+#define RANGE_METRIC_RT_RAYMARINE raymarine_ranges
+#define RANGE_MIXED_RT_RAYMARINE  raymarine_ranges                                                                                        \
+#define RANGE_NAUTIC_RT_RAYMARINE raymarine_ranges                                                                                        \
+
+#endif
 
 // Garmin HD has 720 spokes of varying 519 - 705 bytes each
 #define RAYMARINE_SPOKES 2048

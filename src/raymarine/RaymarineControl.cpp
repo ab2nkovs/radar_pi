@@ -35,33 +35,6 @@ PLUGIN_BEGIN_NAMESPACE
 
 #pragma pack(push, 1)
 
-typedef struct {
-  uint32_t packet_type;
-  uint32_t len1;
-  uint8_t parm1;
-} rad_ctl_pkt_9;
-
-typedef struct {
-  uint32_t packet_type;
-  uint32_t len1;
-  uint16_t parm1;
-} rad_ctl_pkt_10;
-
-typedef struct {
-  uint32_t packet_type;
-  uint32_t len1;
-  uint32_t parm1;
-} rad_ctl_pkt_12;
-
-typedef struct {
-  uint32_t packet_type;
-  uint32_t len1;
-  uint8_t parm1;
-  uint8_t parm2;
-  uint8_t parm3;
-  uint8_t parm4;
-} rad_ctl_pkt_12_4b;
-
 #pragma pack(pop)
 
 RaymarineControl::RaymarineControl(NetworkAddress sendAddress) {
@@ -70,7 +43,7 @@ RaymarineControl::RaymarineControl(NetworkAddress sendAddress) {
   m_addr.sin_port = sendAddress.port;
 
   m_radar_socket = INVALID_SOCKET;
-  m_name = wxT("Navico radar");
+  m_name = wxT("Raymarine radar");
 
   m_pi = 0;
   m_ri = 0;
@@ -89,6 +62,7 @@ bool RaymarineControl::Init(radar_pi *pi, RadarInfo *ri, NetworkAddress &ifadr, 
   int one = 1;
 
   m_addr.sin_addr = radaradr.addr;
+  m_addr.sin_port = radaradr.port;
 
   m_pi = pi;
   m_ri = ri;
@@ -155,60 +129,304 @@ bool RaymarineControl::TransmitCmd(const void *msg, int size) {
   return true;
 }
 
+static uint8_t rd_msg_tx_control[] = {
+	0x01, 0x80, 0x01, 0x00,
+	0x00, // Control value at offset 4 : 0 - off, 1 - on
+	0x00, 0x00, 0x00
+};
+
 void RaymarineControl::RadarTxOff() {
   IF_LOG_AT(LOGLEVEL_VERBOSE | LOGLEVEL_TRANSMIT, wxLogMessage(wxT("radar_pi: %s transmit: turn off"), m_name));
 
-  rad_ctl_pkt_10 packet;
-  packet.packet_type = 0x2b2;
-  packet.len1 = sizeof(packet.parm1);
-  packet.parm1 = 1;  // 1 for "off"
+  rd_msg_tx_control[4] = 0;
 
-  TransmitCmd(&packet, sizeof(packet));
+  TransmitCmd(rd_msg_tx_control, sizeof(rd_msg_tx_control));
 }
 
 void RaymarineControl::RadarTxOn() {
   IF_LOG_AT(LOGLEVEL_VERBOSE | LOGLEVEL_TRANSMIT, wxLogMessage(wxT("radar_pi: %s transmit: turn on"), m_name));
 
-  rad_ctl_pkt_10 packet;
-  packet.packet_type = 0x2b2;
-  packet.len1 = sizeof(packet.parm1);
-  packet.parm1 = 2;  // 2 for "on"
+  rd_msg_tx_control[4] = 1;
 
-  TransmitCmd(&packet, sizeof(packet));
+  TransmitCmd(rd_msg_tx_control, sizeof(rd_msg_tx_control));
 }
 
-bool RaymarineControl::RadarStayAlive() {
-  // Garmin radars don't need a ping
+static uint8_t rd_msg_1s[] = {
+	0x00, 0x80, 0x01, 0x00, 0x52, 0x41, 0x44, 0x41, 0x52, 0x00, 0x00, 0x00
+};
+
+static uint8_t rd_msg_5s[] = {
+	0x03, 0x89, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+	0x00, 0x00, 0x00, 0x00, 0x68, 0x01, 0x00, 0x00, 0x9e, 0x03, 0x00, 0x00, 0xb4, 0x00, 0x00, 0x00,
+	0x00, 0x00, 0x00, 0x00
+};
+
+bool RaymarineControl::RadarStayAlive() 
+{
+  TransmitCmd(rd_msg_1s, sizeof(rd_msg_1s));
   return true;
 }
 
-bool RaymarineControl::SetRange(int meters) {
-  if (meters >= 200 && meters <= 48 * 1852) {
-    rad_ctl_pkt_12 packet;
+static uint8_t rd_msg_set_range[] = {
+	0x01, 0x81, 0x01, 0x00, 0x01, 0x00, 0x00, 0x00, 
+	0x01,	// Range at offset 8 (0 - 1/8, 1 - 1/4, 2 - 1/2, 3 - 3/4, 4 - 1, 5 - 1.5, 6 - 3...)
+	0x00, 0x00, 0x00
+};
 
-    packet.packet_type = 0x2b3;
-    packet.len1 = sizeof(packet.parm1);
-    packet.parm1 = meters;
-    LOG_VERBOSE(wxT("radar_pi: %s transmit: range %d meters"), m_name.c_str(), meters);
-    return TransmitCmd(&packet, sizeof(packet));
+bool RaymarineControl::SetRange(int meters)
+{
+  for(int i = 0; i < sizeof(raymarine_ranges) / sizeof(raymarine_ranges[0]); i++)
+  {
+    if(meters <= raymarine_ranges[i])
+    {
+      rd_msg_set_range[8] = i;
+      LOG_VERBOSE(wxT("radar_pi: %s transmit: range %d (%d) meters"), m_name.c_str(), meters, raymarine_ranges[i]);
+      return TransmitCmd(rd_msg_set_range, sizeof(rd_msg_set_range));
+    }
   }
   return false;
+}
+
+static uint8_t rd_msg_mbs_control[] = {
+	0x01, 0x82, 0x01, 0x00, 0x01, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+	0x00, // MBS Enable (1) at offset 16
+	0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00
+};
+
+static uint8_t rd_msg_set_display_timing[] = {
+	0x02, 0x82, 0x01, 0x00, 0x01, 0x00, 0x00, 0x00, 
+	0x6d, // Display timing value at offset 8
+	0x00, 0x00, 0x00
+};
+
+static uint8_t rd_msg_set_stc_preset[] = {
+	0x03, 0x82, 0x01, 0x00, 0x01, 0x00, 0x00, 0x00, 
+	0x74, // STC preset value at offset 8
+	0x00, 0x00, 0x00
+};
+
+static uint8_t rd_msg_tune_coarse[] = {
+	0x04, 0x82, 0x01, 0x00, 
+	0x00, // Coarse tune at offset 4
+	0x00, 0x00, 0x00
+};
+
+static uint8_t rd_msg_bearing_offset[] = {
+	0x07, 0x82, 0x01, 0x00, 
+	0x14, 0x00, 0x00, 0x00
+};
+
+static uint8_t rd_msg_set_sea[] = {
+	0x02, 0x83, 0x01, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00,
+	0x00, 0x00, 0x00, 0x00, 
+	0x00, // Sea value at offset 20
+	0x00, 0x00, 0x00
+};
+
+static uint8_t rd_msg_sea_auto[] = {
+	0x02, 0x83, 0x01, 0x00, 0x01, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+	0x01, // Sea auto value at offset 16
+	0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00
+};
+
+static uint8_t rd_msg_set_gain[] = {
+	0x01, 0x83, 0x01, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00,
+	0x00, 0x00, 0x00, 0x00,
+	0x00, // Gain value at offset 20
+	0x00, 0x00, 0x00
+};
+
+static uint8_t rd_msg_set_gain_auto[] = {
+	0x01, 0x83, 0x01, 0x00, 0x01, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+	0x01, // Gain auto - 1, manual - 0 at offset 16
+	0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00
+};
+
+static uint8_t rd_msg_rain_on[] = {
+	0x03, 0x83, 0x01, 0x00, 0x01, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+	0x01, // Rain on at offset 16 
+	0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00
+};
+
+static uint8_t rd_msg_rain_set[] = {
+	0x03, 0x83, 0x01, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00,
+	0x00, 0x00, 0x00, 0x00, 
+	0x33, // Rain value at offset 20 
+	0x00, 0x00, 0x00
+};
+
+static uint8_t rd_msg_ftc_on[] = {
+	0x04, 0x83, 0x01, 0x00, 0x01, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+	0x01, // FTC on at offset 16
+	0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00
+};
+
+static uint8_t rd_msg_ftc_set[] = {
+	0x04, 0x83, 0x01, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00,
+	0x00, 0x00, 0x00, 0x00, 
+	0x1a, // FTC value at offset 20
+	0x00, 0x00, 0x00
+};
+
+static uint8_t rd_msg_tune_auto[] = {
+	0x05, 0x83, 0x01, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 
+	0x01, // Enable at offset 12
+	0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00
+};
+
+static uint8_t rd_msg_tune_fine[] = {
+	0x05, 0x83, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+	0x00, // Tune value at offset 16
+	0x00, 0x00, 0x00
+};
+
+static uint8_t rd_msg_target_expansion[] = {
+	0x06, 0x83, 0x01, 0x00, 0x01, 0x00, 0x00, 0x00, 
+	0x01,	// Expansion value 0 - disabled, 1 - low, 2 - high 
+	0x00, 0x00, 0x00
+};
+
+static uint8_t rd_msg_interference_rejection[] = {
+	0x07, 0x83, 0x01, 0x00, 
+	0x01,	// Interference rejection at offset 4, 0 - off, 1 - normal, 2 - high 
+	0x00, 0x00, 0x00
+};
+
+static uint8_t curve_values[] = { 0, 1, 2, 4, 6, 8, 10, 13 };
+static uint8_t rd_msg_curve_select[] = {
+	0x0a, 0x83, 0x01, 0x00, 
+	0x01	// Curve value at offset 4
+};
+
+void RaymarineControl::SetGain(uint8_t value)
+{
+	rd_msg_set_gain[20] = value;
+	TransmitCmd(rd_msg_set_gain, sizeof(rd_msg_set_gain));
+}
+
+void RaymarineControl::SetAutoGain(bool enable)
+{
+	rd_msg_set_gain_auto[16] = enable ? 1 : 0;
+	TransmitCmd(rd_msg_set_gain_auto, sizeof(rd_msg_set_gain_auto));
+}
+
+void RaymarineControl::SetTune(uint8_t value)
+{
+	rd_msg_tune_fine[16] = value;
+	TransmitCmd(rd_msg_tune_fine, sizeof(rd_msg_tune_fine));
+}
+
+void RaymarineControl::SetAutoTune(bool enable)
+{
+	rd_msg_tune_auto[12] = enable ? 1 : 0;
+	TransmitCmd(rd_msg_tune_auto, sizeof(rd_msg_tune_auto));
+}
+
+void RaymarineControl::SetCoarseTune(uint8_t value)
+{
+	rd_msg_tune_coarse[4] = value;
+	TransmitCmd(rd_msg_tune_coarse, sizeof(rd_msg_tune_coarse));
+}
+
+void RaymarineControl::TurnOff()
+{
+  rd_msg_tx_control[4] = 3;
+  TransmitCmd(rd_msg_tx_control, sizeof(rd_msg_tx_control));
+}
+
+void RaymarineControl::SetSTCPreset(uint8_t value)
+{
+	rd_msg_set_stc_preset[8] = value;
+	TransmitCmd(rd_msg_set_stc_preset, sizeof(rd_msg_set_stc_preset));
+}
+
+void RaymarineControl::SetFTC(uint8_t value)
+{
+	rd_msg_ftc_set[20] = value;
+	TransmitCmd(rd_msg_ftc_set, sizeof(rd_msg_ftc_set));
+}
+
+void RaymarineControl::SetFTCEnabled(bool enable)
+{
+	rd_msg_ftc_on[16] = enable ? 1 : 0;
+	TransmitCmd(rd_msg_ftc_on, sizeof(rd_msg_ftc_on));
+}
+
+void RaymarineControl::SetRain(uint8_t value)
+{
+	rd_msg_rain_set[20] = value;
+	TransmitCmd(rd_msg_rain_set, sizeof(rd_msg_rain_set));
+}
+
+void RaymarineControl::SetRainEnabled(bool enable)
+{
+	rd_msg_rain_on[16] = enable ? 1 : 0;
+	TransmitCmd(rd_msg_rain_on, sizeof(rd_msg_rain_on));
+}
+
+void RaymarineControl::SetSea(uint8_t value)
+{
+	rd_msg_set_sea[20] = value;
+	TransmitCmd(rd_msg_set_sea, sizeof(rd_msg_set_sea));
+}
+
+void RaymarineControl::SetAutoSea(uint8_t value)
+{
+	rd_msg_sea_auto[16] = value;
+	TransmitCmd(rd_msg_sea_auto, sizeof(rd_msg_sea_auto));
+}
+
+void RaymarineControl::SetDisplayTiming(uint8_t value)
+{
+	rd_msg_set_display_timing[8] = value;
+	TransmitCmd(rd_msg_set_display_timing, sizeof(rd_msg_set_display_timing));
+}
+
+void RaymarineControl::SetBearingOffset(int32_t value)
+{
+	rd_msg_bearing_offset[4] = value & 0xff;
+	rd_msg_bearing_offset[5] = (value >> 8) & 0xff;
+	rd_msg_bearing_offset[6] = (value >> 16) & 0xff;
+	rd_msg_bearing_offset[7] = (value >> 24) & 0xff;
+	TransmitCmd(rd_msg_bearing_offset, sizeof(rd_msg_bearing_offset));
+}
+
+void RaymarineControl::SetSeaClutterCurve(uint8_t id)
+{
+	rd_msg_curve_select[4] = curve_values[id - 1];
+	TransmitCmd(rd_msg_curve_select, sizeof(rd_msg_curve_select));
+}
+
+void RaymarineControl::EnableMBS(bool enable)
+{
+	rd_msg_mbs_control[16] = enable ? 1 : 0;
+	TransmitCmd(rd_msg_mbs_control, sizeof(rd_msg_mbs_control));
+}
+
+bool RaymarineControl::SetInterferenceRejection(uint8_t value)
+{
+	if(value >= 0 && value <= 2)
+	{
+		rd_msg_interference_rejection[4] = value;
+		TransmitCmd(rd_msg_interference_rejection, sizeof(rd_msg_interference_rejection));
+	}
+	else return false;
+}
+
+bool RaymarineControl::SetTargetExpansion(uint8_t value)
+{
+	if(value >= 0 && value <= 2)
+	{
+		rd_msg_target_expansion[8] = value;
+		TransmitCmd(rd_msg_target_expansion, sizeof(rd_msg_target_expansion));
+	}
+	else return false;
 }
 
 bool RaymarineControl::SetControlValue(ControlType controlType, RadarControlItem &item) {
   bool r = false;
   int value = item.GetValue();
   RadarControlState state = item.GetState();
-
-  rad_ctl_pkt_9 pck_9;
-  rad_ctl_pkt_10 pck_10;
-  rad_ctl_pkt_12 pck_12;
-  rad_ctl_pkt_12_4b pck_12_4b;
-
-  pck_9.len1 = sizeof(pck_9.parm1);
-  pck_10.len1 = sizeof(pck_10.parm1);
-  pck_12.len1 = sizeof(pck_12.parm1);
-  pck_12_4b.len1 = sizeof(pck_12_4b.parm1);
 
   switch (controlType) {
     // The following are settings that are not radar commands. Made them explicit so the
@@ -221,7 +439,6 @@ bool RaymarineControl::SetControlValue(ControlType controlType, RadarControlItem
     case CT_REFRESHRATE:
     case CT_TARGET_TRAILS:
     case CT_TRAILS_MOTION:
-    case CT_MAIN_BANG_SIZE:
     case CT_MAX:
     case CT_ANTENNA_FORWARD:
     case CT_ANTENNA_STARBOARD:
@@ -232,13 +449,13 @@ bool RaymarineControl::SetControlValue(ControlType controlType, RadarControlItem
     // The following are settings not supported by Garmin HD.
     case CT_SIDE_LOBE_SUPPRESSION:
     case CT_TARGET_EXPANSION:
-    case CT_TARGET_BOOST:
     case CT_LOCAL_INTERFERENCE_REJECTION:
     case CT_NOISE_REJECTION:
     case CT_TARGET_SEPARATION:
     case CT_ANTENNA_HEIGHT:
     case CT_NO_TRANSMIT_END:
     case CT_NO_TRANSMIT_START:
+    case CT_SCAN_SPEED:
 
       break;
 
@@ -246,108 +463,50 @@ bool RaymarineControl::SetControlValue(ControlType controlType, RadarControlItem
     // Some interesting holes here, seems there could be more commands!
 
     case CT_BEARING_ALIGNMENT: {
-      if (value < 0) {
-        value += 360;
-      }
-
-      pck_10.packet_type = 0x2b7;
-      pck_10.parm1 = value;
-
       LOG_VERBOSE(wxT("radar_pi: %s Bearing alignment: %d"), m_name.c_str(), value);
-      r = TransmitCmd(&pck_10, sizeof(pck_10));
+      SetBearingOffset(value);
       break;
     }
-
-    /*    case CT_NO_TRANSMIT_START: {
-          // value is already in range -180 .. +180 which is what I think radar wants...
-          if (state == RCS_OFF) {  // OFF
-            pck_9.packet_type = 0x93f;
-            pck_9.parm1 = 0;
-            r = TransmitCmd(&pck_9, sizeof(pck_9));
-          } else {
-            pck_9.packet_type = 0x93f;
-            pck_9.parm1 = 1;
-            r = TransmitCmd(&pck_9, sizeof(pck_9));
-            pck_12.packet_type = 0x940;
-            pck_12.parm1 = value * 32;
-            r = TransmitCmd(&pck_12, sizeof(pck_12));
-            m_ri->m_no_transmit_start.Update(value);  // necessary because we hacked "off" as auto value
-          }
-          LOG_VERBOSE(wxT("radar_pi: %s No Transmit Start: value=%d state=%d"), m_name.c_str(), value, (int)state);
-          break;
-        }
-
-        case CT_NO_TRANSMIT_END: {
-          // value is already in range -180 .. +180 which is what I think radar wants...
-          if (state == RCS_OFF) {  // OFF
-            pck_9.packet_type = 0x93f;
-            pck_9.parm1 = 0;
-            r = TransmitCmd(&pck_9, sizeof(pck_9));
-          } else {
-            pck_9.packet_type = 0x93f;
-            pck_9.parm1 = 1;
-            r = TransmitCmd(&pck_9, sizeof(pck_9));
-            pck_12.packet_type = 0x941;
-            pck_12.parm1 = value * 32;
-            r = TransmitCmd(&pck_12, sizeof(pck_12));
-          }
-          LOG_VERBOSE(wxT("radar_pi: %s No Transmit End: value=%d state=%d"), m_name.c_str(), value, (int)state);
-          break;
-        } */
 
     case CT_GAIN: {
       LOG_VERBOSE(wxT("radar_pi: %s Gain: value=%d state=%d"), m_name.c_str(), value, (int)state);
       if (state >= RCS_AUTO_1) {
-        pck_12.packet_type = 0x2b4;
-        pck_12.parm1 = 344;
-        r = TransmitCmd(&pck_12, sizeof(pck_12));
+        SetAutoGain(true);
       } else if (state == RCS_MANUAL) {
-        pck_12.packet_type = 0x2b4;
-        pck_12.parm1 = value;
-        r = TransmitCmd(&pck_12, sizeof(pck_12));
+        SetGain(value);
       }
       break;
     }
 
     case CT_SEA: {
       LOG_VERBOSE(wxT("radar_pi: %s Sea: value=%d state=%d"), m_name.c_str(), value, (int)state);
-      pck_12_4b.parm3 = 0;
-      pck_12_4b.parm4 = 0;
 
       if (state == RCS_AUTO_1) {
-        pck_12_4b.packet_type = 0x2b5;
-        pck_12_4b.parm1 = 33;  // calm
-        pck_12_4b.parm2 = 1;   // auto
-        r = TransmitCmd(&pck_12, sizeof(pck_12));
+        SetAutoSea(1);
       } else if (state == RCS_AUTO_2) {
-        pck_12_4b.packet_type = 0x2b5;
-        pck_12_4b.parm1 = 67;  // medium
-        pck_12_4b.parm2 = 2;   // auto
-        r = TransmitCmd(&pck_12, sizeof(pck_12));
+        SetAutoSea(2);
       } else if (state == RCS_AUTO_3) {
-        pck_12_4b.packet_type = 0x2b5;
-        pck_12_4b.parm1 = 100;  // rough
-        pck_12_4b.parm2 = 2;    // auto
-        r = TransmitCmd(&pck_12, sizeof(pck_12));
+        SetAutoSea(3);
       } else if (state == RCS_OFF) {
-        pck_12_4b.packet_type = 0x2b5;
-        pck_12_4b.parm1 = 0;  // off
-        pck_12_4b.parm2 = 0;  // off
-        r = TransmitCmd(&pck_12_4b, sizeof(pck_12_4b));
+         SetAutoSea(0);
+         SetSea(0);
       } else if (state == RCS_MANUAL) {
-        pck_12_4b.packet_type = 0x2b5;
-        pck_12_4b.parm1 = value;
-        pck_12_4b.parm1 = 0;  // manual
-        r = TransmitCmd(&pck_12_4b, sizeof(pck_12_4b));
+         SetAutoSea(0);
+         SetSea(value);
       }
       break;
     }
 
     case CT_FTC: {
-      LOG_VERBOSE(wxT("radar_pi: %s FTC: value=%d"), m_name.c_str(), value);
-      pck_9.packet_type = 0x2b8;
-      pck_9.parm1 = value;
-      r = TransmitCmd(&pck_9, sizeof(pck_9));
+      if(state == RCS_OFF)
+      {
+        SetFTCEnabled(0);
+      }
+      else if(state == RCS_MANUAL)
+      {
+        SetFTCEnabled(1);
+        SetFTC(value);
+      }
       break;
     }
 
@@ -355,30 +514,29 @@ bool RaymarineControl::SetControlValue(ControlType controlType, RadarControlItem
       LOG_VERBOSE(wxT("radar_pi: %s Rain: value=%d state=%d"), m_name.c_str(), value, (int)state);
 
       if (state == RCS_OFF) {
-        pck_12.packet_type = 0x2b6;
-        pck_12.parm1 = 0;  // off
-        r = TransmitCmd(&pck_12, sizeof(pck_12));
+        SetRainEnabled(0);
       } else if (state == RCS_MANUAL) {
-        pck_12.packet_type = 0x2b6;
-        pck_12.parm1 = value;
-        r = TransmitCmd(&pck_12, sizeof(pck_12));
+        SetRainEnabled(1);
+        SetRain(value);
       }
       break;
     }
 
     case CT_INTERFERENCE_REJECTION: {
       LOG_VERBOSE(wxT("radar_pi: %s Interference Rejection / Crosstalk: %d"), m_name.c_str(), value);
-      pck_9.packet_type = 0x2b9;
-      pck_9.parm1 = value;
-      r = TransmitCmd(&pck_9, sizeof(pck_9));
+      SetInterferenceRejection(value);
       break;
     }
 
-    case CT_SCAN_SPEED: {
-      LOG_VERBOSE(wxT("radar_pi: %s Scan speed: %d"), m_name.c_str(), value);
-      pck_9.packet_type = 0x2be;
-      pck_9.parm1 = value;
-      r = TransmitCmd(&pck_9, sizeof(pck_9));
+    case CT_TARGET_BOOST: {
+      LOG_VERBOSE(wxT("radar_pi: %s Target Boost: %d"), m_name.c_str(), value);
+      SetTargetExpansion(value);
+      break;
+    }
+
+    case CT_MAIN_BANG_SIZE: {
+      LOG_VERBOSE(wxT("radar_pi: %s Target Boost: %d"), m_name.c_str(), value);
+      EnableMBS(state == RCS_OFF);
       break;
     }
   }

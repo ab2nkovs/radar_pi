@@ -8,6 +8,7 @@
  *           Hakan Svensson
  *           Douwe Fokkema
  *           Sean D'Epagnier
+ *           RM Guy
  ***************************************************************************
  *   Copyright (C) 2010 by David S. Register              bdbcat@yahoo.com *
  *   Copyright (C) 2012-2013 by Dave Cowell                                *
@@ -615,7 +616,7 @@ bool RaymarineReceive::ProcessReport(const UINT8 *report, int len)
 	return false;
 }
 
-static int radar_ranges[] = { 1852 / 4, 1852 / 2, 1852, 1852 * 3 / 2, 1852 * 3, 1852 * 6, 1852 * 12, 1852 * 24, 1852 * 48, 1852 * 96, 1852 * 144 };
+int raymarine_ranges[] = { 1852 / 4, 1852 / 2, 1852, 1852 * 3 / 2, 1852 * 3, 1852 * 6, 1852 * 12, 1852 * 24, 1852 * 48, 1852 * 96, 1852 * 144 };
 static int current_ranges[11] = { 125, 250, 500, 750, 1500, 3000, 6000, 12000, 24000, 48000, 72000 };
 static enum RadarControlState auto_values[] = {
   RCS_MANUAL,  RCS_AUTO_1,  RCS_AUTO_2,  RCS_AUTO_3,  RCS_AUTO_4,  RCS_AUTO_5,  RCS_AUTO_6,
@@ -636,19 +637,19 @@ void RaymarineReceive::ProcessFeedback(const UINT8 *data, int len)
 				for(int i = 0; i < sizeof(current_ranges) / sizeof(current_ranges[0]); i++)
 				{
 					current_ranges[i] = fbPtr->range_values[i];
-					radar_ranges[i] = 1852 * fbPtr->range_values[i] / 500;
+					raymarine_ranges[i] = 1852 * fbPtr->range_values[i] / 500;
 
-					fprintf(stderr, "%d (%d)\n", current_ranges[i], radar_ranges[i]);
+					// fprintf(stderr, "%d (%d)\n", current_ranges[i], raymarine_ranges[i]);
 				}
 			}
-			if(radar_ranges[fbPtr->range_id] != m_range_meters) {
+			if(raymarine_ranges[fbPtr->range_id] != m_range_meters) {
 				if (m_pi->m_settings.verbose >= 1)
 				{
 				  LOG_VERBOSE(wxT("RMRadar_pi: %s now scanning with range %d meters (was %d meters)"), m_ri->m_name.c_str(),
-					  radar_ranges[fbPtr->range_id],
+					  raymarine_ranges[fbPtr->range_id],
 					  m_range_meters);
 				}
-				m_range_meters = radar_ranges[fbPtr->range_id];
+				m_range_meters = raymarine_ranges[fbPtr->range_id];
 				m_updated_range = true;
 				m_ri->m_range.Update(m_range_meters / 2); // RM MFD shows half of what is received
 			}

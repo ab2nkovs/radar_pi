@@ -90,6 +90,8 @@ struct SMiscRadarInfo {
 	int m_rotationPeriod;
 };
 
+extern int raymarine_ranges[11];
+
 class RaymarineReceive : public RadarReceive {
  public:
   RaymarineReceive(radar_pi *pi, RadarInfo *ri, NetworkAddress reportAddr);

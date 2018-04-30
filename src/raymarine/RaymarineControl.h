@@ -60,6 +60,28 @@ class RaymarineControl : public RadarControl {
   struct sockaddr_in m_addr;
   SOCKET m_radar_socket;
   wxString m_name;
+
+  void SetGain(uint8_t value);
+  void SetAutoGain(bool enable);
+  void SetTune(uint8_t value);
+
+  void SetAutoTune(bool enable);
+  void SetCoarseTune(uint8_t value);
+  void TurnOff();
+  void SetSTCPreset(uint8_t value);
+  void SetFTC(uint8_t value);
+  void SetFTCEnabled(bool enable);
+  void SetRain(uint8_t value);
+  void SetRainEnabled(bool enable);
+  void SetSea(uint8_t value);
+  void SetAutoSea(uint8_t value);
+  void SetDisplayTiming(uint8_t value);
+  void SetBearingOffset(int32_t value);
+  void SetSeaClutterCurve(uint8_t id);
+  void EnableMBS(bool enable);
+  bool SetInterferenceRejection(uint8_t value);
+  bool SetTargetExpansion(uint8_t value);
+ 
 };
 
 PLUGIN_END_NAMESPACE
